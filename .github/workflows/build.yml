@@ -1,5 +1,4 @@
-
-name: Build Strimzi
+name: Build and publish Strimzi
 
 on:
   workflow_dispatch:
@@ -7,6 +6,12 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    env:
+      DOCKER_REGISTRY: docker.io
+      DOCKER_ORG: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKER_TAG: 0.25.0-k8s126
 
     steps:
       - name: Checkout
@@ -18,6 +23,12 @@ jobs:
           distribution: temurin
           java-version: '11'
           cache: maven
+
+      - name: Install yq v4
+        run: |
+          sudo curl -fsSL https://github.com/mikefarah/yq/releases/download/v4.44.6/yq_linux_amd64 -o /usr/local/bin/yq
+          sudo chmod +x /usr/local/bin/yq
+          yq --version
 
       - name: Build Maven project
         run: |
@@ -33,3 +44,14 @@ jobs:
 
       - name: Show images
         run: docker images
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push Docker images to Docker Hub
+        run: |
+          cd docker-images
+          make docker_push
