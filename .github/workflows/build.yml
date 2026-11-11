@@ -2,6 +2,11 @@ name: Build and publish Strimzi
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - release-0.25.x-k8s126
+    paths:
+      - .github/workflows/build.yml
 
 jobs:
   build:
@@ -11,7 +16,7 @@ jobs:
     env:
       DOCKER_REGISTRY: docker.io
       DOCKER_ORG: ${{ secrets.DOCKERHUB_USERNAME }}
-      DOCKER_TAG: 0.25.0-k8s126
+      DOCKER_TAG: 0.25.0-k8s126-r2
 
     steps:
       - name: Checkout
@@ -36,6 +41,30 @@ jobs:
             -DskipTests \
             -Dmaven.javadoc.skip=true \
             -Ddependency.analyze.skip=true
+
+      - name: Generate Kafka configuration models
+        run: |
+          cd config-model-generator
+          ./build-config-models.sh build
+
+      - name: Package cluster operator with generated models
+        run: |
+          mvn -B -pl cluster-operator -am package \
+            -DskipTests \
+            -Dmaven.javadoc.skip=true \
+            -Ddependency.analyze.skip=true
+
+      - name: Verify Kafka configuration models
+        run: |
+          set -euo pipefail
+          JAR=cluster-operator/target/cluster-operator-0.25.0.jar
+          test -s cluster-operator/target/cluster-operator-0.25.0-dist.zip
+
+          for version in $(yq -r '.[] | select(.supported == true) | .version' kafka-versions.yaml); do
+            model="kafka-${version}-config-model.json"
+            test -s "cluster-operator/src/main/resources/${model}"
+            jar tf "$JAR" | grep -Fx "$model"
+          done
 
       - name: Build Docker images
         run: |
